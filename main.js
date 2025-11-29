@@ -11,9 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeEventListeners() {
     document.getElementById('analyzeBtn').addEventListener('click', analyzeFileWithBackend);
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
-
     document.getElementById('quickAnalyzeBtn').addEventListener('click', analyzeSingleTextWithBackend);
-
     document.getElementById('downloadCsvBtn').addEventListener('click', downloadCsv);
     document.getElementById('downloadJsonBtn').addEventListener('click', downloadJson);
 }
@@ -68,30 +66,24 @@ async function analyzeSingleTextWithBackend() {
     }
 
     try {
-        // Вызываем правильный эндпоинт /analyze_text
-        const response = await fetch("http://127.0.0.1:8000/analyze_text", { //fetch("https://tonalnost.onrender.com/analyze_text"
+        const response = await fetch("http://127.0.0.1:8000/analyze_text", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text })   // JSON с полем text
+            body: JSON.stringify({ text })
         });
 
         const data = await response.json();
 
-        // Формируем массив currentResults в формате фронта
-        // После получения ответа
-        currentResults = data.map(d => {
-            // Приводим label к числу, затем определяем текстовую метку для фронта
-            let labelMap = ['Negative', 'Neutral', 'Positive'];
-            let sentimentLabel = labelMap[d.sentiment_class]; // строго по числу
-        
-            return {
-                text: d.comment,
-                sentiment: d.sentiment_class,
-                sentiment_label: sentimentLabel,
-                confidence: d.score,
-                src: d.source
-            };
-        });
+        // Привязываем текстовую метку к числовому классу
+        const labelMap = ['Negative', 'Neutral', 'Positive'];
+
+        currentResults = [{
+            text: data.comment,
+            sentiment: data.sentiment_class,
+            sentiment_label: labelMap[data.sentiment_class],
+            confidence: data.score,
+            src: data.source
+        }];
 
         displayResults();
         showQuickResult(`Текст проанализирован через бекенд`, 'success');
@@ -101,7 +93,6 @@ async function analyzeSingleTextWithBackend() {
         showQuickResult(`Ошибка анализа: ${error.message}`, 'error');
     }
 }
-
 
 // === Анализ CSV файла через бекенд ===
 async function analyzeFileWithBackend() {
@@ -125,17 +116,19 @@ async function analyzeFileWithBackend() {
             return;
         }
 
-        const response = await fetch("http://127.0.0.1:8000/analyze_text", { //fetch("https://tonalnost.onrender.com/analyze_text"
+        const response = await fetch("http://127.0.0.1:8000/analyze_text", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({ comments })
         });
         const data = await response.json();
 
+        const labelMap = ['Negative', 'Neutral', 'Positive'];
+
         currentResults = data.map(d => ({
             text: d.comment,
             sentiment: d.sentiment_class,
-            sentiment_label: d.sentiment_label,
+            sentiment_label: labelMap[d.sentiment_class],
             confidence: d.score,
             src: d.source
         }));
@@ -262,7 +255,6 @@ function downloadCsv() {
 
     downloadFile(csvContent, 'submission.csv', 'text/csv;charset=utf-8');
 }
-
 
 function downloadJson() {
     if (currentResults.length === 0) { alert('Нет данных для скачивания'); return; }
