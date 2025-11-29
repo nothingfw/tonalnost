@@ -78,13 +78,20 @@ async function analyzeSingleTextWithBackend() {
         const data = await response.json();
 
         // Формируем массив currentResults в формате фронта
-        currentResults = [{
-            text: data.comment,
-            sentiment: data.sentiment_class,
-            sentiment_label: data.sentiment_label,
-            confidence: data.score,
-            src: data.source
-        }];
+        // После получения ответа
+        currentResults = data.map(d => {
+            // Приводим label к числу, затем определяем текстовую метку для фронта
+            let labelMap = ['Negative', 'Neutral', 'Positive'];
+            let sentimentLabel = labelMap[d.sentiment_class]; // строго по числу
+        
+            return {
+                text: d.comment,
+                sentiment: d.sentiment_class,
+                sentiment_label: sentimentLabel,
+                confidence: d.score,
+                src: d.source
+            };
+        });
 
         displayResults();
         showQuickResult(`Текст проанализирован через бекенд`, 'success');
@@ -245,14 +252,17 @@ function showQuickResult(message, type) {
 function downloadCsv() {
     if (currentResults.length === 0) { alert('Нет данных для скачивания'); return; }
 
-    const headers = ['text','sentiment','sentiment_label','confidence','src'];
-    let csvContent = '\uFEFF' + headers.join(';') + '\n';
-    currentResults.forEach(r => {
-        const row = [`"${r.text.replace(/"/g,'""')}"`, r.sentiment, `"${r.sentiment_label}"`, r.confidence.toFixed(4).replace('.',','), `"${r.src}"`];
-        csvContent += row.join(';') + '\n';
+    const headers = ['ID','label'];
+    let csvContent = '\uFEFF' + headers.join(',') + '\n';
+
+    currentResults.forEach((r, index) => {
+        const row = [index+1, r.sentiment]; // ID = 1..N, label = 0/1/2
+        csvContent += row.join(',') + '\n';
     });
-    downloadFile(csvContent, 'analyzed_results.csv', 'text/csv;charset=utf-8');
+
+    downloadFile(csvContent, 'submission.csv', 'text/csv;charset=utf-8');
 }
+
 
 function downloadJson() {
     if (currentResults.length === 0) { alert('Нет данных для скачивания'); return; }
