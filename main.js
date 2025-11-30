@@ -52,7 +52,7 @@ async function analyzeSingleTextWithBackend() {
     if (!text) { showQuickResult('Введите текст', 'error'); return; }
 
     try {
-        const res = await fetch(`${API_BASE}/api/analyze_text`, {
+        const res = await fetch(`${API_BASE}/analyze_text`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
@@ -104,7 +104,7 @@ async function analyzeFileWithBackend() {
             }
 
             try {
-                const res = await fetch(`${API_BASE}/api/analyze`, {
+                const res = await fetch(`${API_BASE}/analyze`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ comments })
@@ -156,7 +156,7 @@ async function handleEvalFile(e) {
             }
 
             try {
-                const res = await fetch(`${API_BASE}/api/analyze_text_batch`, {
+                const res = await fetch(`${API_BASE}/analyze_text_batch`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ comments })
@@ -179,7 +179,7 @@ async function handleEvalFile(e) {
 }
 
 async function computeMacroF1Backend(y_true, y_pred) {
-    const res = await fetch(`${API_BASE}/api/macro_f1`, {
+    const res = await fetch(`${API_BASE}/macro_f1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ y_true, y_pred })
