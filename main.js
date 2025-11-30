@@ -2,11 +2,14 @@ let currentResults = [];
 let sentimentChart = null;
 let confidenceChart = null;
 
-document.addEventListener('DOMContentLoaded', function () {
+const API_BASE = "http://127.0.0.1:8000"; // <<< ЛОКАЛЬНЫЙ БЕКЕНД
+
+document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
     initializeDragAndDrop();
 });
 
+// === Инициализация событий ===
 function initializeEventListeners() {
     document.getElementById('analyzeBtn').addEventListener('click', analyzeFileWithBackend);
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
@@ -14,9 +17,9 @@ function initializeEventListeners() {
     document.getElementById('evalFileInput')?.addEventListener('change', handleEvalFile);
 }
 
+// === Drag & Drop файлов ===
 function initializeDragAndDrop() {
-    const uploadAreas = document.querySelectorAll('.upload-area');
-    uploadAreas.forEach(area => {
+    document.querySelectorAll('.upload-area').forEach(area => {
         area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragover'); });
         area.addEventListener('dragleave', () => area.classList.remove('dragover'));
         area.addEventListener('drop', e => {
@@ -26,8 +29,7 @@ function initializeDragAndDrop() {
             if (files.length > 0) {
                 const fileInput = area.querySelector('.file-input');
                 fileInput.files = files;
-                const placeholder = area.querySelector('.upload-placeholder span');
-                placeholder.textContent = `📄 ${files[0].name}`;
+                area.querySelector('.upload-placeholder span').textContent = `📄 ${files[0].name}`;
                 showFileInfo(area.id === 'uploadArea' ? 'fileAnalysisStatus' : 'evaluationResults',
                     `Файл "${files[0].name}" готов к анализу`, 'info');
             }
@@ -35,6 +37,7 @@ function initializeDragAndDrop() {
     });
 }
 
+// === Выбор файла ===
 function handleFileSelect(e) {
     const file = e.target.files[0];
     if (file) {
@@ -43,20 +46,23 @@ function handleFileSelect(e) {
     }
 }
 
+// === Быстрый анализ текста ===
 async function analyzeSingleTextWithBackend() {
-    const text = document.getElementById('singleText').value.trim();
+    const text = document.getElementById('singleText').value?.trim();
     if (!text) { showQuickResult('Введите текст', 'error'); return; }
+
     try {
-        const res = await fetch("/api/analyze_text", {
+        const res = await fetch(`${API_BASE}/api/analyze_text`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text })
         });
+
         const data = await res.json();
+        if (data.error) { showQuickResult(data.error, 'error'); return; }
 
         const labelMap = ['Нейтральная', 'Положительная', 'Негативная'];
 
-        // Превращаем объект в массив
         const resultsArray = Array.isArray(data) ? data : [data];
 
         currentResults = resultsArray.map(d => ({
@@ -70,12 +76,17 @@ async function analyzeSingleTextWithBackend() {
 
         displayResults();
         showQuickResult('Текст проанализирован', 'success');
-    } catch (e) { console.error(e); showQuickResult(`Ошибка: ${e.message}`, 'error'); }
+    } catch (e) {
+        console.error(e);
+        showQuickResult(`Ошибка: ${e.message}`, 'error');
+    }
 }
 
+// === Анализ CSV ===
 async function analyzeFileWithBackend() {
     const file = document.getElementById('fileInput').files[0];
     if (!file) { showFileInfo('fileAnalysisStatus', 'Выберите CSV', 'error'); return; }
+
     showFileInfo('fileAnalysisStatus', '<div class="loading"></div> Анализируем...', 'info');
 
     Papa.parse(file, {
@@ -83,10 +94,17 @@ async function analyzeFileWithBackend() {
         skipEmptyLines: true,
         complete: async function (results) {
 
-            const comments = results.data.map(d => d.text || '');
+            const comments = results.data
+                .filter(d => (d.text || d.Text || '').trim() !== '')
+                .map(d => (d.text || d.Text).trim());
+
+            if (comments.length === 0) {
+                showFileInfo('fileAnalysisStatus', 'Нет валидных текстов в CSV', 'error');
+                return;
+            }
 
             try {
-                const res = await fetch("/api/analyze", {
+                const res = await fetch(`${API_BASE}/api/analyze`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ comments })
@@ -94,7 +112,6 @@ async function analyzeFileWithBackend() {
 
                 const data = await res.json();
                 const resultsArray = Array.isArray(data) ? data : [data];
-
                 const labelMap = ['Нейтральная', 'Положительная', 'Негативная'];
 
                 currentResults = resultsArray.map((d, i) => ({
@@ -118,49 +135,66 @@ async function analyzeFileWithBackend() {
 
 // === Macro-F1 ===
 async function handleEvalFile(e) {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files[0]; 
+    if (!file) return;
+
     showFileInfo('evaluationResults', '<div class="loading"></div> Считаем Macro-F1...', 'info');
 
     Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
         complete: async function (results) {
+
             const evalData = results.data
                 .filter(d => d.text && d.label !== undefined)
-                .map(d => ({ text: d.text, trueLabel: parseInt(d.label) }));
+                .map(d => ({ text: d.text.trim(), trueLabel: parseInt(d.label) }));
 
             const comments = evalData.map(d => d.text);
+            if (comments.length === 0) {
+                showFileInfo('evaluationResults', 'Нет валидных данных', 'error');
+                return;
+            }
 
             try {
-                const res = await fetch("/api/analyze_text_batch", {
+                const res = await fetch(`${API_BASE}/api/analyze_text_batch`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ comments })
                 });
+
                 const predictions = await res.json();
 
                 const y_true = evalData.map(d => d.trueLabel);
                 const y_pred = predictions.map(d => d.sentiment_class);
 
                 const f1 = await computeMacroF1Backend(y_true, y_pred);
+
                 showFileInfo('evaluationResults', `Macro-F1: ${f1.toFixed(3)}`, 'success');
-            } catch (e) { console.error(e); showFileInfo('evaluationResults', `Ошибка: ${e.message}`, 'error'); }
+            } catch (e) {
+                console.error(e);
+                showFileInfo('evaluationResults', `Ошибка: ${e.message}`, 'error');
+            }
         }
     });
 }
 
 async function computeMacroF1Backend(y_true, y_pred) {
-    const res = await fetch("/api/macro_f1", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ y_true, y_pred })
+    const res = await fetch(`${API_BASE}/api/macro_f1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ y_true, y_pred })
     });
+
     const data = await res.json();
     return data.f1;
 }
 
-// === Отображение ===
+// === Отображение результатов ===
 function displayResults() {
     document.getElementById('resultsSection').style.display = 'block';
-    displayStatistics(); displayTable(); displayCharts();
+    displayStatistics();
+    displayTable();
+    displayCharts();
 }
 
 function displayStatistics() {
@@ -170,11 +204,11 @@ function displayStatistics() {
         positive: currentResults.filter(r => r.sentiment === 1).length,
         negative: currentResults.filter(r => r.sentiment === 2).length
     };
-    const statsHtml =
-        `<div class="stat-card neutral">${stats.neutral}</div>
-         <div class="stat-card positive">${stats.positive}</div>
-         <div class="stat-card negative">${stats.negative}</div>
-         <div class="stat-card">Всего: ${stats.total}</div>`;
+    const statsHtml = `
+        <div class="stat-card neutral">${stats.neutral}</div>
+        <div class="stat-card positive">${stats.positive}</div>
+        <div class="stat-card negative">${stats.negative}</div>
+        <div class="stat-card">Всего: ${stats.total}</div>`;
     document.getElementById('statsGrid').innerHTML = statsHtml;
 }
 
@@ -236,19 +270,12 @@ function displayCharts() {
     });
 }
 
-// === Скачивание CSV только с ID и Label ===
+// === Скачивание CSV ===
 function downloadResultsCSV() {
-    if (currentResults.length === 0) {
-        alert("Нет данных для скачивания");
-        return;
-    }
+    if (currentResults.length === 0) { alert("Нет данных для скачивания"); return; }
 
     const header = ["ID", "Label"];
-    const rows = currentResults.map(r => [
-        r.id,
-        r.sentiment
-    ]);
-
+    const rows = currentResults.map(r => [r.id, r.sentiment]);
     let csvContent = header.join(",") + "\n" + rows.map(r => r.join(",")).join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -263,7 +290,7 @@ function downloadResultsCSV() {
     URL.revokeObjectURL(url);
 }
 
-// === Вспомогательные функции ===
+// === Вспомогательные ===
 function showFileInfo(id, msg, type) {
     const el = document.getElementById(id);
     el.innerHTML = msg;
